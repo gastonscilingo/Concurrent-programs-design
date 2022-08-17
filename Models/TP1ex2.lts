@@ -1,0 +1,56 @@
+const N = 4 // 
+range T = 0..N
+const MAXCL = 2 //  cleaners threads number
+range CL = 1..MAXCL
+
+set SemaAlpha = {{semaExcept}.{acquire,release}}
+set ListAlpha = {{allowed,banned}.{add,remove,search,found,notFound,contain,empty,true,false}}
+set ThreadsAlpha = {{threadsFactory}.newThread[t:CL]}
+set CleanerAlpha = {setTimeout,timeout}
+
+CONTROLLER = (addBanned -> ADDBANNED 
+			| addException -> ADDEXCEPTION
+			| removeException -> REMOVEEXCEPTION),
+ADDBANNED = (semaExcept.acquire -> allowed.contain -> (allowed.true -> semaExcept.release -> CONTROLLER | allowed.false -> ADDB)),
+ADDB = (banned.add -> threadsFactory.newThread[t:CL] -> setTimeout[t] -> semaExcept.release -> CONTROLLER),
+ADDEXCEPTION = (semaExcept.acquire -> allowed.contain -> (allowed.true -> semaExcept.release -> CONTROLLER | allowed.false -> ADDA)),
+ADDA = (allowed.add -> semaExcept.release -> banned.remove -> (banned.search ->  (banned.found -> CONTROLLER | banned.notFound -> CONTROLLER)
+															| banned.empty -> CONTROLLER) ),
+REMOVEEXCEPTION = (allowed.remove -> (allowed.search -> (allowed.found -> CONTROLLER | allowed.notFound -> CONTROLLER)
+									| allowed.empty -> CONTROLLER) )+{ListAlpha}.
+
+CLEANER = (setTimeout -> timeout -> banned.remove -> (banned.search ->  (banned.found -> CLEANER | banned.notFound -> CLEANER)
+													| banned.empty -> CLEANER))+{ListAlpha,SemaAlpha,ThreadsAlpha}.
+
+CLIENT = (connnect -> allowed.contain -> (allowed.true -> accepted -> CLIENT | allowed.false -> CHECKBANNED)),
+CHECKBANNED = (banned.contain -> (banned.true -> refused -> CLIENT | banned.false -> accepted -> CLIENT))						
+						+{ListAlpha,SemaAlpha,ThreadsAlpha}.
+
+THREADS = THREADS[1],
+THREADS[t:CL] = (newThread[t] -> THREADS[t%MAXCL+1]).
+
+LOCK = (acquire -> release -> LOCK).
+
+LIST = LIST[0],
+LIST[i:T] =	( when(i<N) add -> LIST[i+1] | when(i==N) add -> LIST[i]
+				| when(i>0)  remove -> search -> (found -> LIST[i-1] | notFound -> LIST[i])
+				| when(i==0) remove -> empty -> LIST[i]
+				| when(i>0) contain -> (true -> LIST[i]| false -> LIST[i])
+				| when(i==0) contain -> false -> LIST[i]).
+
+||SYSTEM = ( {allowed,banned}:LIST || semaExcept:LOCK || threadsFactory:THREADS).
+
+||SIMULASYSTEM(N=2,CLI=1) = ( cleaner[i:CL]:CLEANER || controller[i:1..N]:CONTROLLER || client[i:1..CLI]:CLIENT  
+					|| {controller[i:1..N],cleaner[i:CL],client[i:1..CLI]}::SYSTEM)
+					/{controller[i:1..N].setTimeout[c:CL]/cleaner[c].setTimeout}.
+
+
+//without clients upto 4 cleaners
+//||SIMULASYSTEM(N=2) = ( cleaner[i:CL]:CLEANER || controller[i:1..N]:CONTROLLER || {controller[i:1..N],cleaner[i:CL]}::SYSTEM)
+//					/{controller[i:1..N].setTimeout[c:CL]/cleaner[c].setTimeout}.
+
+
+
+
+
+

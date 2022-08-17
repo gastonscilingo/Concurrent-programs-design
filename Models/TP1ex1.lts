@@ -1,0 +1,43 @@
+const N = 4
+range T = 0..N
+
+set QueueAlpha = {{q1,q2}.{insert,poll,qSize[i:T]}}
+set LockAlpha = {{l1,l2}.{acquire,release}}
+set RandomVarAlpha = {getRandom,nextRandom}
+set BufferAlpha = {put,get,incSize,decSize}
+
+range R = 1..2
+RANDOMVAR = RANDOMVAR[1],
+RANDOMVAR[r:R] = (nextRandom -> RANDOMVAR[1] | nextRandom -> RANDOMVAR[2] | getRandom[r] -> RANDOMVAR[r]).
+
+const MAXSIZE = 4
+range S = 0..MAXSIZE
+
+PRODUCER = (put -> RANDOMPUT),
+RANDOMPUT = ( nextRandom -> getRandom[r:R] -> (when(r==1) choseQ1 -> Q1INSERT | when(r==2) choseQ2 -> Q2INSERT) ),
+Q1INSERT = ( l1.acquire -> q1.insert -> incSize -> l1.release -> PRODUCER),
+Q2INSERT = ( l2.acquire ->  q2.insert -> incSize -> l2.release -> PRODUCER)+{QueueAlpha,BufferAlpha,RandomVarAlpha}.
+
+CONSUMER = (get -> RANDOMGET),
+RANDOMGET = ( nextRandom -> getRandom[r:R] -> (when(r==1) choseQ1 -> Q1POLL | when(r==2) choseQ2 -> Q2POLL) ),
+Q1POLL = ( l1.acquire -> q1.poll -> decSize -> l1.release -> CONSUMER),
+Q2POLL = ( l2.acquire -> q2.poll -> decSize -> l2.release -> CONSUMER)+{QueueAlpha,BufferAlpha,RandomVarAlpha}.
+
+LOCK = (acquire -> release -> LOCK).
+
+QUEUE = QUEUE[0],
+QUEUE[i:T] =	( when(i<N) insert -> QUEUE[i+1] | when(i==N) insert -> QUEUE[i]
+				| when(i>0) poll -> QUEUE[i-1] | when(i==0) poll -> QUEUE[i]
+				| qSize[i] -> QUEUE[i]).
+
+BUFFER = BUFFER[0],
+BUFFER[s:S] =	( put -> nextRandom -> BUFFER[s] 
+				| when(s>0) get -> nextRandom -> BUFFER[s]
+				| when(s<MAXSIZE) incSize -> BUFFER[s+1] | when(s==MAXSIZE) incSize -> BUFFER[s]
+				| when(s>0) decSize -> BUFFER[s-1] | when(s==0) decSize -> BUFFER[s]).
+
+
+
+||POOL = ( BUFFER || {q1,q2}:QUEUE || {l1,l2}:LOCK ).
+
+||SYSTEM(N=2) = ( p[i:1..N]:PRODUCER || c[i:1..N]:CONSUMER || {p[i:1..N],c[i:1..N]}::POOL || {p[i:1..N],c[i:1..N]}::RANDOMVAR).
